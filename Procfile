@@ -1,0 +1,1 @@
+web: streamlit run ai_agent/frontend/app.py --server.port $PORT --server.address 0.0.0.0
