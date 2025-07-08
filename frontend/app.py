@@ -2,16 +2,18 @@ import streamlit as st
 import requests
 import dateparser
 from datetime import datetime, timedelta
+import os
 
 st.set_page_config(page_title="AI-Agent: Google Calendar Assistant", page_icon="📅")
 st.title("🤖 AI-Agent: Google Calendar Assistant")
 
 # Backend status check
+BACKEND_URL = os.environ.get("BACKEND_URL", "https://ai-agent-backend.onrender.com")
 backend_status = "Unknown"
 backend_color = "gray"
 try:
     health_check = requests.post(
-        "https://backend-s6il.onrender.com/chat",
+        f"{BACKEND_URL}/chat",
         json={"message": "ping"},
         timeout=5
     )
@@ -169,7 +171,7 @@ with st.form(key="chat_form", clear_on_submit=True):
             # Prepare chat history for context
             history = [msg for msg in st.session_state["messages"]]
             response = requests.post(
-                "https://backend-s6il.onrender.com/chat",
+                f"{BACKEND_URL}/chat",
                 json={"message": user_input, "history": history},
                 timeout=30
             )
