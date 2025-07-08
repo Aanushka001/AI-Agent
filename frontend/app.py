@@ -8,7 +8,7 @@ st.set_page_config(page_title="AI-Agent: Google Calendar Assistant", page_icon="
 st.title("🤖 AI-Agent: Google Calendar Assistant")
 
 # Backend status check
-BACKEND_URL = os.environ.get("BACKEND_URL", "https://ai-agent-backend.onrender.com")
+BACKEND_URL = os.environ.get("BACKEND_URL", "https://backend-s6il.onrender.com")
 backend_status = "Unknown"
 backend_color = "gray"
 try:
