@@ -11,7 +11,7 @@ backend_status = "Unknown"
 backend_color = "gray"
 try:
     health_check = requests.post(
-        "http://localhost:8000/chat",
+        "https://backend-s6il.onrender.com/chat",
         json={"message": "ping"},
         timeout=5
     )
@@ -169,7 +169,7 @@ with st.form(key="chat_form", clear_on_submit=True):
             # Prepare chat history for context
             history = [msg for msg in st.session_state["messages"]]
             response = requests.post(
-                "http://localhost:8000/chat",
+                "https://backend-s6il.onrender.com/chat",
                 json={"message": user_input, "history": history},
                 timeout=30
             )

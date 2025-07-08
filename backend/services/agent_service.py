@@ -76,7 +76,7 @@ def create_agent():
         base_url="https://openrouter.ai/api/v1",
         api_key=SecretStr(api_key),
         default_headers={
-            "HTTP-Referer": "http://localhost:3000",
+            "HTTP-Referer": "https://your-frontend-url.com",
             "X-Title": "Calendar Agent"
         }
     )
