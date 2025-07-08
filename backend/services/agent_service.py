@@ -191,11 +191,11 @@ def create_agent():
         import pytz
         import re
         output = state["output"].lower()
-        # Confirmation logic
-        if "confirm" in output or "book it" in output or "yes, book" in output:
+        # Robust confirmation logic
+        affirmative_keywords = ["confirm", "book it", "yes", "ok", "please do", "go ahead", "sure", "do it", "schedule", "add it", "add event"]
+        if any(word in output for word in affirmative_keywords):
             pending = state.get("pending_event")
             if pending:
-                # Always enforce Asia/Kolkata if not a valid timezone
                 timezone = pending.get("timeZone")
                 if timezone not in pytz.all_timezones:
                     pending["timeZone"] = "Asia/Kolkata"
