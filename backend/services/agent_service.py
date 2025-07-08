@@ -76,7 +76,14 @@ def check_availability(date: str, duration_minutes: int = 30) -> str:
 def extract_timezone(text: str):
     import pytz
     import re
-    # 1. Check for common abbreviations
+    # List of words to ignore (common English words)
+    ignore_words = set([
+        "the", "my", "your", "another", "local", "what", "which", "a", "an", "at", "in", "on", "for", "to", "by"
+    ])
+    # 1. Handle 'local time' or 'my time'
+    if re.search(r'\b(local|my) time\b', text, re.IGNORECASE):
+        return "Asia/Kolkata"  # or your preferred default
+    # 2. Check for common abbreviations
     tz_abbrs = set(['IST', 'UTC', 'PST', 'EST', 'CST', 'MST', 'EDT', 'PDT', 'BST', 'CET', 'EET', 'JST', 'AEST', 'AEDT', 'GMT'])
     abbr_map = {
         'IST': 'Asia/Kolkata',
@@ -98,11 +105,17 @@ def extract_timezone(text: str):
     for abbr in tz_abbrs:
         if re.search(rf'\\b{abbr}\\b', text, re.IGNORECASE):
             return abbr_map.get(abbr.upper(), abbr.upper())
-    # 2. Check for full timezone names in the text
+    # 3. Check for full timezone names in the text
     for zone in pytz.all_timezones:
         if zone.replace('_', ' ').lower() in text.lower():
             return zone
-    # 3. Fallback
+    # 4. If a word before 'time' or 'timezone' is in ignore_words, skip it
+    match = re.search(r"(\b\w+\b) (?:time|timezone)", text.lower())
+    if match:
+        candidate = match.group(1).strip()
+        if candidate not in ignore_words and candidate in pytz.all_timezones:
+            return candidate
+    # 5. Fallback
     return "Asia/Kolkata"
 
 def create_agent():
@@ -185,7 +198,15 @@ def create_agent():
                 timezone = "Asia/Kolkata"
             now = datetime.now(pytz.timezone(timezone))
             if time_str:
-                parsed_time = dateparser.parse(time_str, settings={"TIMEZONE": timezone, "RETURN_AS_TIMEZONE_AWARE": True, "PREFER_DATES_FROM": "future"})
+                parsed_time = dateparser.parse(
+                    time_str,
+                    settings={
+                        "TIMEZONE": timezone,
+                        "RETURN_AS_TIMEZONE_AWARE": True,
+                        "PREFER_DATES_FROM": "future",
+                        "RELATIVE_BASE": now
+                    }
+                )
             else:
                 parsed_time = None
             if parsed_time and "tomorrow" in output:
@@ -215,7 +236,15 @@ def create_agent():
             if time_match:
                 phrase += time_match.group(1).strip()
             phrase = phrase.strip()
-            parsed_time = dateparser.parse(phrase, settings={"TIMEZONE": timezone, "RETURN_AS_TIMEZONE_AWARE": True, "PREFER_DATES_FROM": "future"})
+            parsed_time = dateparser.parse(
+                phrase,
+                settings={
+                    "TIMEZONE": timezone,
+                    "RETURN_AS_TIMEZONE_AWARE": True,
+                    "PREFER_DATES_FROM": "future",
+                    "RELATIVE_BASE": now
+                }
+            )
             if not parsed_time or parsed_time < now:
                 return {"output": "Sorry, I couldn't understand the date/time for availability. Please specify a future date and time (e.g., 'Check availability on July 10th at 3pm IST')."}
             start_time = parsed_time.isoformat()
