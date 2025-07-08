@@ -39,6 +39,7 @@ class AgentState(TypedDict):
     tool_args: Dict[str, Any] | None
     tool_result: str | None
     history: list | None
+    pending_event: Dict[str, Any] | None  # Store last proposed event
 
 @tool
 def book_meeting(start_time: str, end_time: str, summary: str, timeZone="UTC", location=None, conference=False) -> str:
@@ -173,27 +174,34 @@ def create_agent():
             return state
         args = state["tool_args"] or {}
         if state["tool_name"] == "book_meeting":
-            # Only pass supported args
             filtered_args = {k: v for k, v in args.items() if k in ["start_time", "end_time", "summary", "timeZone", "location", "conference"]}
             result = book_meeting.invoke(filtered_args)
+            return {"tool_result": result, "pending_event": None}
         elif state["tool_name"] == "check_availability":
             result = check_availability.invoke(args)
+            return {"tool_result": result}
         else:
             return state
-        return {"tool_result": result}
 
     def route_to_tools(state: AgentState):
         import dateparser
         import pytz
         import re
         output = state["output"].lower()
+        # Confirmation logic
+        if "confirm" in output or "book it" in output or "yes, book" in output:
+            pending = state.get("pending_event")
+            if pending:
+                return {"tool_name": "book_meeting", "tool_args": pending, "pending_event": None}
+            else:
+                return {"output": "There is no pending event to confirm. Please specify the meeting details."}
+        # Book meeting extraction
         if "book" in output:
             summary_match = re.search(r"book (?:a )?meeting(?: with ([\w\s]+))?", output)
             summary = summary_match.group(1).strip() if summary_match and summary_match.group(1) else "Meeting"
             time_match = re.search(r"at ([^.,;\n]+)", output)
             time_str = time_match.group(1).strip() if time_match else None
             timezone = extract_timezone(output)
-            # Validate timezone
             if timezone not in pytz.all_timezones:
                 timezone = "Asia/Kolkata"
             now = datetime.now(pytz.timezone(timezone))
@@ -215,7 +223,10 @@ def create_agent():
                 return {"output": "Sorry, I couldn't understand the meeting time or it was in the past. Please specify a future date and time (e.g., 'Book a meeting tomorrow at 3pm IST')."}
             start_time = parsed_time.isoformat()
             end_time = (parsed_time + timedelta(minutes=30)).isoformat()
-            return {"tool_name": "book_meeting", "tool_args": {"start_time": start_time, "end_time": end_time, "summary": summary, "timeZone": timezone}}
+            # Store pending event for confirmation
+            pending_event = {"start_time": start_time, "end_time": end_time, "summary": summary, "timeZone": timezone}
+            confirm_msg = f"I'll check your availability for the 1 PM - 1:30 PM slot on {parsed_time.strftime('%B %d, %Y')}. Is that correct? (Time zone will default to {timezone} unless specified.)\nLet me know if you'd like to adjust or confirm the booking!"
+            return {"output": confirm_msg, "pending_event": pending_event}
         elif "check" in output or "available" in output:
             import dateparser
             import pytz
