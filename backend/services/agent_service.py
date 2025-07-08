@@ -45,9 +45,14 @@ def book_meeting(start_time: str, end_time: str, summary: str, timeZone="UTC", l
     """Book a meeting in Google Calendar."""
     try:
         event = create_event(start_time, end_time, summary, timeZone=timeZone, location=location, conference=conference)
-        print("Event creation response:", event)
         html_link = event.get('htmlLink')
-        msg = f"Booked: {summary} from {start_time} to {end_time} (Event ID: {event.get('id', 'N/A')})"
+        from datetime import datetime
+        import pytz
+        dt = datetime.fromisoformat(start_time)
+        local_dt = dt.astimezone(pytz.timezone(timeZone))
+        date_str = local_dt.strftime('%B %d, %Y')
+        time_str = local_dt.strftime('%I:%M %p')
+        msg = f"Booked: {summary} on {date_str} at {time_str} ({timeZone}) for 30 minutes."
         if html_link:
             msg += f"\n[View in Google Calendar]({html_link})"
         return msg
@@ -67,6 +72,38 @@ def check_availability(date: str, duration_minutes: int = 30) -> str:
             return f"Available from {start_time} to {end_time}"
     except Exception as e:
         return f"Error checking availability: {str(e)}"
+
+def extract_timezone(text: str):
+    import pytz
+    import re
+    # 1. Check for common abbreviations
+    tz_abbrs = set(['IST', 'UTC', 'PST', 'EST', 'CST', 'MST', 'EDT', 'PDT', 'BST', 'CET', 'EET', 'JST', 'AEST', 'AEDT', 'GMT'])
+    abbr_map = {
+        'IST': 'Asia/Kolkata',
+        'PST': 'US/Pacific',
+        'EST': 'US/Eastern',
+        'CST': 'US/Central',
+        'MST': 'US/Mountain',
+        'EDT': 'US/Eastern',
+        'PDT': 'US/Pacific',
+        'BST': 'Europe/London',
+        'CET': 'Europe/Paris',
+        'EET': 'Europe/Athens',
+        'JST': 'Asia/Tokyo',
+        'AEST': 'Australia/Sydney',
+        'AEDT': 'Australia/Sydney',
+        'GMT': 'Etc/GMT',
+        'UTC': 'UTC'
+    }
+    for abbr in tz_abbrs:
+        if re.search(rf'\\b{abbr}\\b', text, re.IGNORECASE):
+            return abbr_map.get(abbr.upper(), abbr.upper())
+    # 2. Check for full timezone names in the text
+    for zone in pytz.all_timezones:
+        if zone.replace('_', ' ').lower() in text.lower():
+            return zone
+    # 3. Fallback
+    return "Asia/Kolkata"
 
 def create_agent():
     api_key: str = OPENROUTER_API_KEY  # type: ignore
@@ -137,43 +174,53 @@ def create_agent():
         import pytz
         import re
         output = state["output"].lower()
-        # Book meeting extraction
         if "book" in output:
-            # Try to extract summary
             summary_match = re.search(r"book (?:a )?meeting(?: with ([\w\s]+))?", output)
             summary = summary_match.group(1).strip() if summary_match and summary_match.group(1) else "Meeting"
-            # Try to extract time info
             time_match = re.search(r"at ([^.,;\n]+)", output)
             time_str = time_match.group(1).strip() if time_match else None
-            # Try to extract timezone
-            tz_match = re.search(r"([A-Za-z/_]+) time|([A-Z]{2,4}) time|([A-Za-z/_]+) timezone|([A-Z]{2,4}) timezone", output)
-            tz_str = tz_match.group(1) or tz_match.group(2) or tz_match.group(3) or tz_match.group(4) if tz_match else None
-            timezone = tz_str or "Asia/Kolkata"
-            # Parse time with dateparser
+            timezone = extract_timezone(output)
+            # Validate timezone
+            if timezone not in pytz.all_timezones:
+                timezone = "Asia/Kolkata"
             now = datetime.now(pytz.timezone(timezone))
             if time_str:
                 parsed_time = dateparser.parse(time_str, settings={"TIMEZONE": timezone, "RETURN_AS_TIMEZONE_AWARE": True, "PREFER_DATES_FROM": "future"})
             else:
                 parsed_time = None
-            # If 'tomorrow' in output, add a day
             if parsed_time and "tomorrow" in output:
                 parsed_time = parsed_time + timedelta(days=1)
-            # If parsed_time is in the past or not found, ask for clarification
             if not parsed_time or parsed_time < now:
                 return {"output": "Sorry, I couldn't understand the meeting time or it was in the past. Please specify a future date and time (e.g., 'Book a meeting tomorrow at 3pm IST')."}
             start_time = parsed_time.isoformat()
             end_time = (parsed_time + timedelta(minutes=30)).isoformat()
             return {"tool_name": "book_meeting", "tool_args": {"start_time": start_time, "end_time": end_time, "summary": summary, "timeZone": timezone}}
         elif "check" in output or "available" in output:
-            # Try to extract date and duration
-            date_match = re.search(r"on ([\w\s\-]+)", output)
+            import dateparser
+            import pytz
+            import re
+            # Try to extract date/time phrase
+            date_match = re.search(r"on ([^.,;\n]+)", output)
+            time_match = re.search(r"at ([^.,;\n]+)", output)
             duration_match = re.search(r"for (\d+) minutes", output)
-            date = date_match.group(1).strip() if date_match else None
             duration = int(duration_match.group(1)) if duration_match else 30
-            if date:
-                return {"tool_name": "check_availability", "tool_args": {"date": date, "duration_minutes": duration}}
-            else:
-                return {"output": state["output"]}
+            timezone = extract_timezone(output)
+            if timezone not in pytz.all_timezones:
+                timezone = "Asia/Kolkata"
+            now = datetime.now(pytz.timezone(timezone))
+            # Build a phrase to parse
+            phrase = ""
+            if date_match:
+                phrase += date_match.group(1).strip() + " "
+            if time_match:
+                phrase += time_match.group(1).strip()
+            phrase = phrase.strip()
+            parsed_time = dateparser.parse(phrase, settings={"TIMEZONE": timezone, "RETURN_AS_TIMEZONE_AWARE": True, "PREFER_DATES_FROM": "future"})
+            if not parsed_time or parsed_time < now:
+                return {"output": "Sorry, I couldn't understand the date/time for availability. Please specify a future date and time (e.g., 'Check availability on July 10th at 3pm IST')."}
+            start_time = parsed_time.isoformat()
+            end_time = (parsed_time + timedelta(minutes=duration)).isoformat()
+            return {"tool_name": "check_availability", "tool_args": {"start_time": start_time, "end_time": end_time}}
         return {"output": state["output"]}
 
     workflow.add_node("llm", llm_node)
