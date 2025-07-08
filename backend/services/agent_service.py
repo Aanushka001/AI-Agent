@@ -42,13 +42,16 @@ class AgentState(TypedDict):
     pending_event: Dict[str, Any] | None  # Store last proposed event
 
 @tool
-def book_meeting(start_time: str, end_time: str, summary: str, timeZone="UTC", location=None, conference=False) -> str:
+def book_meeting(start_time: str, end_time: str, summary: str, timeZone="Asia/Kolkata", location=None, conference=False) -> str:
     """Book a meeting in Google Calendar."""
     try:
+        # Always enforce Asia/Kolkata unless a valid timezone is specified
+        import pytz
+        if timeZone not in pytz.all_timezones:
+            timeZone = "Asia/Kolkata"
         event = create_event(start_time, end_time, summary, timeZone=timeZone, location=location, conference=conference)
         html_link = event.get('htmlLink')
         from datetime import datetime
-        import pytz
         dt = datetime.fromisoformat(start_time)
         local_dt = dt.astimezone(pytz.timezone(timeZone))
         date_str = local_dt.strftime('%B %d, %Y')
@@ -83,7 +86,7 @@ def extract_timezone(text: str):
     ])
     # 1. Handle 'local time' or 'my time'
     if re.search(r'\b(local|my) time\b', text, re.IGNORECASE):
-        return "Asia/Kolkata"  # or your preferred default
+        return "Asia/Kolkata"
     # 2. Check for common abbreviations
     tz_abbrs = set(['IST', 'UTC', 'PST', 'EST', 'CST', 'MST', 'EDT', 'PDT', 'BST', 'CET', 'EET', 'JST', 'AEST', 'AEDT', 'GMT'])
     abbr_map = {
@@ -192,6 +195,10 @@ def create_agent():
         if "confirm" in output or "book it" in output or "yes, book" in output:
             pending = state.get("pending_event")
             if pending:
+                # Always enforce Asia/Kolkata if not a valid timezone
+                timezone = pending.get("timeZone")
+                if timezone not in pytz.all_timezones:
+                    pending["timeZone"] = "Asia/Kolkata"
                 return {"tool_name": "book_meeting", "tool_args": pending, "pending_event": None}
             else:
                 return {"output": "There is no pending event to confirm. Please specify the meeting details."}
@@ -225,7 +232,7 @@ def create_agent():
             end_time = (parsed_time + timedelta(minutes=30)).isoformat()
             # Store pending event for confirmation
             pending_event = {"start_time": start_time, "end_time": end_time, "summary": summary, "timeZone": timezone}
-            confirm_msg = f"I'll check your availability for the 1 PM - 1:30 PM slot on {parsed_time.strftime('%B %d, %Y')}. Is that correct? (Time zone will default to {timezone} unless specified.)\nLet me know if you'd like to adjust or confirm the booking!"
+            confirm_msg = f"I'll check your availability for the 1 PM - 1:30 PM slot on {parsed_time.astimezone(pytz.timezone('Asia/Kolkata')).strftime('%B %d, %Y')} (Asia/Kolkata). Is that correct?\nLet me know if you'd like to adjust or confirm the booking!"
             return {"output": confirm_msg, "pending_event": pending_event}
         elif "check" in output or "available" in output:
             import dateparser
