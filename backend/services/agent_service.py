@@ -133,47 +133,39 @@ def create_agent():
         return {"tool_result": result}
 
     def route_to_tools(state: AgentState):
+        import dateparser
+        import pytz
+        import re
         output = state["output"].lower()
         # Book meeting extraction
         if "book" in output:
-            # Try to extract start_time, end_time, summary from output
-            import re
-            import dateutil.parser
-            # Example: "Book a meeting with John at 1 AM tomorrow."
+            # Try to extract summary
             summary_match = re.search(r"book (?:a )?meeting(?: with ([\w\s]+))?", output)
             summary = summary_match.group(1).strip() if summary_match and summary_match.group(1) else "Meeting"
-            # Find time (very basic, for demo)
-            time_match = re.search(r"at ([\d:apm\s]+)", output)
-            if time_match:
-                time_str = time_match.group(1).strip()
-                try:
-                    from datetime import datetime, timedelta
-                    import pytz
-                    now = datetime.now()
-                    # Try to parse time (assume tomorrow if 'tomorrow' in output)
-                    if "tomorrow" in output:
-                        date = now + timedelta(days=1)
-                    else:
-                        date = now
-                    # Parse time
-                    parsed_time = dateutil.parser.parse(time_str, default=date)
-                    # If parsed_time is in the past, move to next day
-                    now_check = datetime.now()
-                    if parsed_time < now_check:
-                        parsed_time = now_check + timedelta(days=1)
-                    start_time = parsed_time.isoformat()
-                    end_time = (parsed_time + timedelta(minutes=30)).isoformat()
-                except Exception:
-                    start_time = end_time = None
+            # Try to extract time info
+            time_match = re.search(r"at ([^.,;\n]+)", output)
+            time_str = time_match.group(1).strip() if time_match else None
+            # Try to extract timezone
+            tz_match = re.search(r"([A-Za-z/_]+) time|([A-Z]{2,4}) time|([A-Za-z/_]+) timezone|([A-Z]{2,4}) timezone", output)
+            tz_str = tz_match.group(1) or tz_match.group(2) or tz_match.group(3) or tz_match.group(4) if tz_match else None
+            timezone = tz_str or "Asia/Kolkata"
+            # Parse time with dateparser
+            now = datetime.now(pytz.timezone(timezone))
+            if time_str:
+                parsed_time = dateparser.parse(time_str, settings={"TIMEZONE": timezone, "RETURN_AS_TIMEZONE_AWARE": True, "PREFER_DATES_FROM": "future"})
             else:
-                start_time = end_time = None
-            if start_time and end_time and summary:
-                return {"tool_name": "book_meeting", "tool_args": {"start_time": start_time, "end_time": end_time, "summary": summary}}
-            else:
-                return {"output": state["output"]}
+                parsed_time = None
+            # If 'tomorrow' in output, add a day
+            if parsed_time and "tomorrow" in output:
+                parsed_time = parsed_time + timedelta(days=1)
+            # If parsed_time is in the past or not found, ask for clarification
+            if not parsed_time or parsed_time < now:
+                return {"output": "Sorry, I couldn't understand the meeting time or it was in the past. Please specify a future date and time (e.g., 'Book a meeting tomorrow at 3pm IST')."}
+            start_time = parsed_time.isoformat()
+            end_time = (parsed_time + timedelta(minutes=30)).isoformat()
+            return {"tool_name": "book_meeting", "tool_args": {"start_time": start_time, "end_time": end_time, "summary": summary, "timeZone": timezone}}
         elif "check" in output or "available" in output:
             # Try to extract date and duration
-            import re
             date_match = re.search(r"on ([\w\s\-]+)", output)
             duration_match = re.search(r"for (\d+) minutes", output)
             date = date_match.group(1).strip() if date_match else None

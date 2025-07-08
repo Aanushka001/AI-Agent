@@ -151,7 +151,15 @@ with chat_container:
         else:
             # Neon highlights for Google Calendar responses
             if "Booked:" in msg["content"]:
-                chat_html += f"<div class='chat-bubble agent success'><span class='avatar agent'>🤖</span><span>{msg['content']}</span></div>"
+                # Extract Google Calendar link if present
+                import re
+                link_match = re.search(r"\[View in Google Calendar\]\(([^)]+)\)", msg["content"])
+                if link_match:
+                    link = link_match.group(1)
+                    chat_html += f"<div class='chat-bubble agent success'><span class='avatar agent'>🤖</span><span>{msg['content'].split('[View in Google Calendar')[0]}</span></div>"
+                    chat_html += f"<div style='text-align:center; margin: 12px 0;'><a href='{link}' target='_blank' style='display:inline-block; background:linear-gradient(90deg,#39ff14 0%,#00e0ff 100%); color:#18181b; font-weight:bold; border-radius:8px; font-size:1.1rem; padding:14px 32px; text-decoration:none; box-shadow:0 2px 8px 0 #39ff1444;'>Open in Google Calendar</a></div>"
+                else:
+                    chat_html += f"<div class='chat-bubble agent success'><span class='avatar agent'>🤖</span><span>{msg['content']}</span></div>"
             elif "Error" in msg["content"]:
                 chat_html += f"<div class='chat-bubble agent error'><span class='avatar agent'>🤖</span><span>{msg['content']}</span></div>"
             elif "Available from" in msg["content"] or "Busy during" in msg["content"]:
